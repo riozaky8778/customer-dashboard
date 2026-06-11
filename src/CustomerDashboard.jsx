@@ -22,6 +22,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import CustomerMap from "./CustomerMap";
 
 function norm(key) {
   return key.trim().toLowerCase().replace(/\./g, "").replace(/\s+/g, "_");
@@ -285,8 +286,20 @@ export default function CustomerDashboard() {
               </div>
             </div>
 
-            {/* Table */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+            {/* Map + Table */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {/* Map */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col">
+                <h2 className="text-sm font-semibold text-slate-700 mb-3">
+                  Peta sebaran pelanggan {filtered.length !== rows.length && `(${filtered.length} hasil filter)`}
+                </h2>
+                <div className="flex-1 min-h-[480px] rounded-xl overflow-hidden">
+                  <CustomerMap rows={filtered} kecamatans={kecamatans} />
+                </div>
+              </div>
+
+              {/* Table */}
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden h-fit">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -366,6 +379,7 @@ export default function CustomerDashboard() {
                   </div>
                 </div>
               )}
+            </div>
             </div>
           </>
         )}
