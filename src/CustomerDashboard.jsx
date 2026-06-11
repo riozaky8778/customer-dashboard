@@ -90,13 +90,20 @@ export default function CustomerDashboard() {
     [rows]
   );
 
+  // Kecamatan list scoped to selected kota
+  const kecamatansForKota = useMemo(() => {
+    const source = kotaFilter === "Semua" ? rows : rows.filter((r) => r.kota === kotaFilter);
+    return [...new Set(source.map((r) => r.kecamatan).filter(Boolean))].sort();
+  }, [rows, kotaFilter]);
+
   const kecCounts = useMemo(() => {
+    const source = kotaFilter === "Semua" ? rows : rows.filter((r) => r.kota === kotaFilter);
     const m = {};
-    rows.forEach((r) => {
+    source.forEach((r) => {
       if (r.kecamatan) m[r.kecamatan] = (m[r.kecamatan] || 0) + 1;
     });
     return m;
-  }, [rows]);
+  }, [rows, kotaFilter]);
 
   const chartData = useMemo(
     () =>
@@ -263,14 +270,22 @@ export default function CustomerDashboard() {
 
                 <Select label="Kecamatan" value={kecFilter} onChange={(v) => { setKecFilter(v); setPage(1); }}>
                   <option value="Semua">Semua kecamatan</option>
-                  {kecamatans.map((k) => (
+                  {kecamatansForKota.map((k) => (
                     <option key={k} value={k}>
                       {k} ({kecCounts[k]})
                     </option>
                   ))}
                 </Select>
 
-                <Select label="Kota" value={kotaFilter} onChange={(v) => { setKotaFilter(v); setPage(1); }}>
+                <Select
+                  label="Kota"
+                  value={kotaFilter}
+                  onChange={(v) => {
+                    setKotaFilter(v);
+                    setKecFilter("Semua");
+                    setPage(1);
+                  }}
+                >
                   <option value="Semua">Semua kota</option>
                   {kotas.map((k) => (
                     <option key={k} value={k}>{k}</option>

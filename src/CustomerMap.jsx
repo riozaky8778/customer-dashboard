@@ -1,5 +1,5 @@
-import React, { useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import React, { useMemo, useEffect } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -35,6 +35,20 @@ const iconCache = {};
 function getIcon(color) {
   if (!iconCache[color]) iconCache[color] = makeColorIcon(color);
   return iconCache[color];
+}
+
+function FitBounds({ points }) {
+  const map = useMap();
+  useEffect(() => {
+    if (points.length === 0) return;
+    if (points.length === 1) {
+      map.setView([points[0].lat, points[0].lng], 15);
+      return;
+    }
+    const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng]));
+    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
+  }, [points, map]);
+  return null;
 }
 
 export default function CustomerMap({ rows, kecamatans }) {
@@ -77,6 +91,7 @@ export default function CustomerMap({ rows, kecamatans }) {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         attribution='&copy; OpenStreetMap contributors'
       />
+      <FitBounds points={points} />
       <MarkerClusterGroup chunkedLoading>
         {points.map((p, i) => (
           <Marker key={i} position={[p.lat, p.lng]} icon={getIcon(p.color)}>
