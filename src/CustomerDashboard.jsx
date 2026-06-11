@@ -1,33 +1,57 @@
 import React, { useState, useMemo } from "react";
 import Papa from "papaparse";
+import {
+  Upload,
+  Download,
+  Users,
+  MapPin,
+  Building2,
+  Filter,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  X,
+} from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
 
 function norm(key) {
   return key.trim().toLowerCase().replace(/\./g, "").replace(/\s+/g, "_");
 }
 
-const ramps = [
-  { bg: "#EEEDFE", text: "#3C3489" }, // purple
-  { bg: "#E1F5EE", text: "#085041" }, // teal
-  { bg: "#FAECE7", text: "#712B13" }, // coral
-  { bg: "#FBEAF0", text: "#72243E" }, // pink
-  { bg: "#E6F1FB", text: "#0C447C" }, // blue
-  { bg: "#EAF3DE", text: "#27500A" }, // green
-  { bg: "#FAEEDA", text: "#633806" }, // amber
+const PALETTE = [
+  { bg: "bg-violet-100", text: "text-violet-800", bar: "#7c3aed" },
+  { bg: "bg-teal-100", text: "text-teal-800", bar: "#0d9488" },
+  { bg: "bg-orange-100", text: "text-orange-800", bar: "#ea580c" },
+  { bg: "bg-pink-100", text: "text-pink-800", bar: "#db2777" },
+  { bg: "bg-blue-100", text: "text-blue-800", bar: "#2563eb" },
+  { bg: "bg-emerald-100", text: "text-emerald-800", bar: "#059669" },
+  { bg: "bg-amber-100", text: "text-amber-800", bar: "#d97706" },
 ];
 
 export default function CustomerDashboard() {
   const [rows, setRows] = useState([]);
+  const [fileName, setFileName] = useState("");
   const [status, setStatus] = useState("");
   const [kecFilter, setKecFilter] = useState("Semua");
   const [kotaFilter, setKotaFilter] = useState("Semua");
   const [statusFilter, setStatusFilter] = useState("Semua");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 15;
+  const pageSize = 12;
 
   const handleFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setFileName(file.name);
     setStatus("Membaca file...");
     Papa.parse(file, {
       header: true,
@@ -41,7 +65,7 @@ export default function CustomerDashboard() {
           })
           .filter((r) => r.id_pelanggan);
         setRows(parsed);
-        setStatus(`Berhasil memuat ${parsed.length} pelanggan.`);
+        setStatus(`Berhasil memuat ${parsed.length} pelanggan`);
         setPage(1);
         setKecFilter("Semua");
         setKotaFilter("Semua");
@@ -73,6 +97,15 @@ export default function CustomerDashboard() {
     return m;
   }, [rows]);
 
+  const chartData = useMemo(
+    () =>
+      kecamatans
+        .map((k, i) => ({ name: k, total: kecCounts[k], color: PALETTE[i % PALETTE.length].bar }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10),
+    [kecamatans, kecCounts]
+  );
+
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       const matchKec = kecFilter === "Semua" || r.kecamatan === kecFilter;
@@ -92,355 +125,286 @@ export default function CustomerDashboard() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
+  const activeFilterCount = [kecFilter, kotaFilter, statusFilter].filter((f) => f !== "Semua").length;
+
+  const resetFilters = () => {
+    setKecFilter("Semua");
+    setKotaFilter("Semua");
+    setStatusFilter("Semua");
+    setSearch("");
+    setPage(1);
+  };
+
   const exportCSV = () => {
     const csv = Papa.unparse(filtered);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `pelanggan_${kecFilter !== "Semua" ? kecFilter : "semua"}.csv`;
+    a.download = `pelanggan_${kecFilter !== "Semua" ? kecFilter.replace(/\s+/g, "_") : "semua"}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.container}>
-        <h1 style={styles.h1}>Dashboard pelanggan per kecamatan</h1>
-
-        <div style={styles.uploadRow}>
-          <label style={styles.uploadBtn}>
-            Upload data pelanggan (CSV)
-            <input type="file" accept=".csv" onChange={handleFile} style={{ display: "none" }} />
-          </label>
-          {status && <span style={styles.statusText}>{status}</span>}
-          {rows.length > 0 && (
-            <button style={styles.exportBtn} onClick={exportCSV}>
-              Export hasil filter (CSV)
-            </button>
-          )}
-        </div>
-
-        {rows.length === 0 && (
-          <div style={styles.empty}>
-            Upload file CSV data pelanggan untuk mulai melihat dashboard
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      {/* Header */}
+      <header className="border-b border-slate-200 bg-white sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">Dashboard Pelanggan</h1>
+            <p className="text-sm text-slate-500">Filter dan analisis pelanggan per kecamatan</p>
           </div>
-        )}
-
-        {rows.length > 0 && (
-          <>
-            <div style={styles.cards}>
-              <Card label="Total pelanggan" value={rows.length} />
-              <Card label="Kecamatan" value={kecamatans.length} />
-              <Card label="Kota" value={kotas.length} />
-              <Card label="Ditampilkan" value={filtered.length} />
-            </div>
-
-            <div style={styles.filters}>
-              <select
-                style={styles.select}
-                value={kecFilter}
-                onChange={(e) => {
-                  setKecFilter(e.target.value);
-                  setPage(1);
-                }}
+          <div className="flex items-center gap-2">
+            <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium cursor-pointer hover:bg-slate-700 transition-colors">
+              <Upload size={16} />
+              Upload CSV
+              <input type="file" accept=".csv" onChange={handleFile} className="hidden" />
+            </label>
+            {rows.length > 0 && (
+              <button
+                onClick={exportCSV}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium hover:bg-slate-50 transition-colors"
               >
-                <option value="Semua">Semua kecamatan</option>
-                {kecamatans.map((k) => (
-                  <option key={k} value={k}>
-                    {k} ({kecCounts[k]})
-                  </option>
-                ))}
-              </select>
-
-              <select
-                style={styles.select}
-                value={kotaFilter}
-                onChange={(e) => {
-                  setKotaFilter(e.target.value);
-                  setPage(1);
-                }}
-              >
-                <option value="Semua">Semua kota</option>
-                {kotas.map((k) => (
-                  <option key={k} value={k}>
-                    {k}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                style={{ ...styles.select, minWidth: 120 }}
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setPage(1);
-                }}
-              >
-                <option value="Semua">Semua status</option>
-                {statuses.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="text"
-                placeholder="Cari nama, ID, alamat, kelurahan..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-                style={styles.search}
-              />
-            </div>
-
-            <div style={styles.tableWrap}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>ID pelanggan</th>
-                    <th style={styles.th}>Nama</th>
-                    <th style={styles.th}>Alamat</th>
-                    <th style={styles.th}>Kelurahan</th>
-                    <th style={styles.th}>Kecamatan</th>
-                    <th style={styles.th}>Kota</th>
-                    <th style={styles.th}>Status</th>
-                    <th style={styles.th}>Telp</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageRows.map((r, i) => {
-                    const kecIndex = kecamatans.indexOf(r.kecamatan);
-                    const ramp = ramps[kecIndex >= 0 ? kecIndex % ramps.length : 0];
-                    return (
-                      <tr key={i} style={styles.tr}>
-                        <td style={{ ...styles.td, fontFamily: "monospace", fontSize: 12 }}>
-                          {r.id_pelanggan}
-                        </td>
-                        <td style={styles.td}>{r.nama_pelanggan}</td>
-                        <td style={{ ...styles.td, color: "#666" }}>{r.alamat}</td>
-                        <td style={styles.td}>{r.kelurahan}</td>
-                        <td style={styles.td}>
-                          <span
-                            style={{
-                              ...styles.badge,
-                              background: ramp.bg,
-                              color: ramp.text,
-                            }}
-                          >
-                            {r.kecamatan}
-                          </span>
-                        </td>
-                        <td style={styles.td}>{r.kota}</td>
-                        <td style={styles.td}>
-                          <span
-                            style={{
-                              ...styles.badge,
-                              background: r.status_pelanggan === "ACT" ? "#EAF3DE" : "#F1EFE8",
-                              color: r.status_pelanggan === "ACT" ? "#27500A" : "#5F5E5A",
-                            }}
-                          >
-                            {r.status_pelanggan}
-                          </span>
-                        </td>
-                        <td style={{ ...styles.td, color: "#666", fontFamily: "monospace", fontSize: 12 }}>
-                          {r.telp_1}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {filtered.length === 0 && (
-              <p style={{ textAlign: "center", color: "#888", fontSize: 13, padding: "1rem" }}>
-                Tidak ada data yang cocok.
-              </p>
+                <Download size={16} />
+                Export
+              </button>
             )}
+          </div>
+        </div>
+      </header>
 
-            {totalPages > 1 && (
-              <div style={styles.pagination}>
-                <button
-                  style={styles.pageBtn}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  &#8592;
-                </button>
-                <span style={{ fontSize: 13, color: "#666" }}>
-                  Halaman {page} dari {totalPages}
-                </span>
-                <button
-                  style={styles.pageBtn}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                >
-                  &#8594;
-                </button>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        {rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center text-center py-24 border-2 border-dashed border-slate-200 rounded-2xl bg-white">
+            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+              <Upload size={20} className="text-slate-400" />
+            </div>
+            <p className="font-medium text-slate-700">Belum ada data</p>
+            <p className="text-sm text-slate-500 mt-1 max-w-sm">
+              Upload file CSV berisi data pelanggan (ID, nama, alamat, kecamatan, kota, status, dll) untuk mulai
+            </p>
+          </div>
+        ) : (
+          <>
+            {status && (
+              <div className="mb-4 text-sm text-slate-500">
+                {status} {fileName && <span className="text-slate-400">— {fileName}</span>}
               </div>
             )}
+
+            {/* Stat cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <StatCard icon={<Users size={18} />} label="Total pelanggan" value={rows.length} accent="bg-violet-50 text-violet-600" />
+              <StatCard icon={<MapPin size={18} />} label="Kecamatan" value={kecamatans.length} accent="bg-teal-50 text-teal-600" />
+              <StatCard icon={<Building2 size={18} />} label="Kota" value={kotas.length} accent="bg-orange-50 text-orange-600" />
+              <StatCard icon={<Filter size={18} />} label="Hasil filter" value={filtered.length} accent="bg-blue-50 text-blue-600" />
+            </div>
+
+            {/* Chart + filters layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+              <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-4">
+                <h2 className="text-sm font-semibold text-slate-700 mb-3">Top 10 kecamatan berdasarkan jumlah pelanggan</h2>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={chartData} margin={{ top: 4, right: 8, left: -16, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: 11, fill: "#64748b" }}
+                      angle={-30}
+                      textAnchor="end"
+                      height={60}
+                      interval={0}
+                    />
+                    <YAxis tick={{ fontSize: 11, fill: "#64748b" }} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                      cursor={{ fill: "#f8fafc" }}
+                    />
+                    <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                      {chartData.map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Filters panel */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                    <Filter size={14} /> Filter
+                  </h2>
+                  {activeFilterCount > 0 && (
+                    <button
+                      onClick={resetFilters}
+                      className="text-xs text-slate-400 hover:text-slate-700 inline-flex items-center gap-1"
+                    >
+                      <X size={12} /> Reset
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Cari nama, ID, alamat, kelurahan..."
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setPage(1);
+                    }}
+                    className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
+                  />
+                </div>
+
+                <Select label="Kecamatan" value={kecFilter} onChange={(v) => { setKecFilter(v); setPage(1); }}>
+                  <option value="Semua">Semua kecamatan</option>
+                  {kecamatans.map((k) => (
+                    <option key={k} value={k}>
+                      {k} ({kecCounts[k]})
+                    </option>
+                  ))}
+                </Select>
+
+                <Select label="Kota" value={kotaFilter} onChange={(v) => { setKotaFilter(v); setPage(1); }}>
+                  <option value="Semua">Semua kota</option>
+                  {kotas.map((k) => (
+                    <option key={k} value={k}>{k}</option>
+                  ))}
+                </Select>
+
+                <Select label="Status" value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }}>
+                  <option value="Semua">Semua status</option>
+                  {statuses.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <Th>ID Pelanggan</Th>
+                      <Th>Nama</Th>
+                      <Th>Alamat</Th>
+                      <Th>Kelurahan</Th>
+                      <Th>Kecamatan</Th>
+                      <Th>Kota</Th>
+                      <Th>Status</Th>
+                      <Th>Telp</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((r, i) => {
+                      const kecIndex = kecamatans.indexOf(r.kecamatan);
+                      const palette = PALETTE[kecIndex >= 0 ? kecIndex % PALETTE.length : 0];
+                      return (
+                        <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-colors">
+                          <Td className="font-mono text-xs text-slate-500">{r.id_pelanggan}</Td>
+                          <Td className="font-medium text-slate-800">{r.nama_pelanggan}</Td>
+                          <Td className="text-slate-500 max-w-[220px] truncate">{r.alamat}</Td>
+                          <Td>{r.kelurahan}</Td>
+                          <Td>
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${palette.bg} ${palette.text}`}>
+                              {r.kecamatan}
+                            </span>
+                          </Td>
+                          <Td>{r.kota}</Td>
+                          <Td>
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                                r.status_pelanggan === "ACT"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-slate-100 text-slate-500"
+                              }`}
+                            >
+                              {r.status_pelanggan}
+                            </span>
+                          </Td>
+                          <Td className="font-mono text-xs text-slate-500">{r.telp_1}</Td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {filtered.length === 0 && (
+                <p className="text-center text-sm text-slate-400 py-10">Tidak ada data yang cocok dengan filter.</p>
+              )}
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+                  <p className="text-xs text-slate-400">
+                    Menampilkan {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} dari {filtered.length}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      className="p-1.5 rounded-lg border border-slate-200 disabled:opacity-30 hover:bg-slate-50"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span className="text-xs text-slate-500 min-w-[80px] text-center">
+                      Halaman {page} / {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
+                      className="p-1.5 rounded-lg border border-slate-200 disabled:opacity-30 hover:bg-slate-50"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </>
         )}
+      </main>
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, accent }) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-3">
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${accent}`}>{icon}</div>
+      <div>
+        <p className="text-xs text-slate-500">{label}</p>
+        <p className="text-xl font-semibold text-slate-900">{value}</p>
       </div>
     </div>
   );
 }
 
-function Card({ label, value }) {
+function Select({ label, value, onChange, children }) {
   return (
-    <div style={styles.card}>
-      <p style={styles.cardLabel}>{label}</p>
-      <p style={styles.cardValue}>{value}</p>
-    </div>
+    <label className="block">
+      <span className="block text-xs font-medium text-slate-500 mb-1">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
+      >
+        {children}
+      </select>
+    </label>
   );
 }
 
-const styles = {
-  page: {
-    minHeight: "100vh",
-    background: "#FAFAF8",
-    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif",
-    padding: "2rem 1rem",
-  },
-  container: {
-    maxWidth: 1100,
-    margin: "0 auto",
-  },
-  h1: {
-    fontSize: 22,
-    fontWeight: 600,
-    marginBottom: "1.5rem",
-  },
-  uploadRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: "1.5rem",
-    flexWrap: "wrap",
-  },
-  uploadBtn: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "8px 16px",
-    border: "1px solid #D3D1C7",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontSize: 14,
-    background: "#fff",
-  },
-  exportBtn: {
-    padding: "8px 16px",
-    border: "1px solid #D3D1C7",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontSize: 14,
-    background: "#fff",
-  },
-  statusText: {
-    fontSize: 13,
-    color: "#666",
-  },
-  empty: {
-    padding: "2rem",
-    textAlign: "center",
-    color: "#888",
-    border: "1px dashed #D3D1C7",
-    borderRadius: 12,
-    fontSize: 14,
-  },
-  cards: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-    gap: 12,
-    marginBottom: "1.5rem",
-  },
-  card: {
-    background: "#F1EFE8",
-    borderRadius: 8,
-    padding: "1rem",
-  },
-  cardLabel: {
-    fontSize: 13,
-    color: "#666",
-    margin: "0 0 4px",
-  },
-  cardValue: {
-    fontSize: 24,
-    fontWeight: 600,
-    margin: 0,
-  },
-  filters: {
-    display: "flex",
-    gap: 8,
-    marginBottom: "1rem",
-    flexWrap: "wrap",
-    alignItems: "center",
-  },
-  select: {
-    minWidth: 160,
-    padding: "8px 12px",
-    borderRadius: 8,
-    border: "1px solid #D3D1C7",
-    fontSize: 14,
-    background: "#fff",
-  },
-  search: {
-    flex: 1,
-    minWidth: 200,
-    padding: "8px 12px",
-    borderRadius: 8,
-    border: "1px solid #D3D1C7",
-    fontSize: 14,
-  },
-  tableWrap: {
-    overflowX: "auto",
-    background: "#fff",
-    borderRadius: 12,
-    border: "1px solid #EFEDE6",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    fontSize: 13,
-  },
-  th: {
-    padding: 10,
-    fontWeight: 600,
-    color: "#666",
-    textAlign: "left",
-    borderBottom: "1px solid #EFEDE6",
-    whiteSpace: "nowrap",
-  },
-  td: {
-    padding: 10,
-  },
-  tr: {
-    borderBottom: "1px solid #F5F4F0",
-  },
-  badge: {
-    padding: "2px 8px",
-    borderRadius: 6,
-    fontSize: 12,
-    display: "inline-block",
-    whiteSpace: "nowrap",
-  },
-  pagination: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 12,
-    marginTop: "1rem",
-  },
-  pageBtn: {
-    padding: "6px 12px",
-    borderRadius: 8,
-    border: "1px solid #D3D1C7",
-    background: "#fff",
-    cursor: "pointer",
-  },
-};
+function Th({ children }) {
+  return <th className="text-left font-semibold text-slate-500 text-xs uppercase tracking-wide px-3 py-3 whitespace-nowrap">{children}</th>;
+}
+
+function Td({ children, className = "" }) {
+  return <td className={`px-3 py-2.5 ${className}`}>{children}</td>;
+}
