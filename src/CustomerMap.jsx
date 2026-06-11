@@ -1,16 +1,7 @@
 import React, { useMemo, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
-import MarkerClusterGroup from "react-leaflet-cluster";
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-
-// Fix default icon path issue with bundlers
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
 
 const PALETTE_HEX = [
   "#7c3aed",
@@ -21,21 +12,6 @@ const PALETTE_HEX = [
   "#059669",
   "#d97706",
 ];
-
-function makeColorIcon(color) {
-  return L.divIcon({
-    className: "",
-    html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 0 0 1px rgba(0,0,0,0.15);"></div>`,
-    iconSize: [14, 14],
-    iconAnchor: [7, 7],
-  });
-}
-
-const iconCache = {};
-function getIcon(color) {
-  if (!iconCache[color]) iconCache[color] = makeColorIcon(color);
-  return iconCache[color];
-}
 
 function FitBounds({ points }) {
   const map = useMap();
@@ -92,25 +68,33 @@ export default function CustomerMap({ rows, kecamatans }) {
         attribution='&copy; OpenStreetMap contributors'
       />
       <FitBounds points={points} />
-      <MarkerClusterGroup chunkedLoading>
-        {points.map((p, i) => (
-          <Marker key={i} position={[p.lat, p.lng]} icon={getIcon(p.color)}>
-            <Popup>
-              <div style={{ fontSize: 12, lineHeight: 1.5 }}>
-                <strong>{p.nama_pelanggan}</strong>
-                <br />
-                {p.alamat}
-                <br />
-                <span style={{ color: "#64748b" }}>
-                  {p.kelurahan}, {p.kecamatan}
-                </span>
-                <br />
-                <span style={{ color: "#94a3b8" }}>{p.id_pelanggan}</span>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-      </MarkerClusterGroup>
+      {points.map((p, i) => (
+        <CircleMarker
+          key={i}
+          center={[p.lat, p.lng]}
+          radius={5}
+          pathOptions={{
+            color: "#fff",
+            weight: 1,
+            fillColor: p.color,
+            fillOpacity: 0.85,
+          }}
+        >
+          <Popup>
+            <div style={{ fontSize: 12, lineHeight: 1.5 }}>
+              <strong>{p.nama_pelanggan}</strong>
+              <br />
+              {p.alamat}
+              <br />
+              <span style={{ color: "#64748b" }}>
+                {p.kelurahan}, {p.kecamatan}
+              </span>
+              <br />
+              <span style={{ color: "#94a3b8" }}>{p.id_pelanggan}</span>
+            </div>
+          </Popup>
+        </CircleMarker>
+      ))}
     </MapContainer>
   );
 }
