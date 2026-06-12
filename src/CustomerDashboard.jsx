@@ -181,9 +181,16 @@ export default function CustomerDashboard() {
     reader.readAsArrayBuffer(file);
   };
 
+  // Kecamatan efektif: pakai GPS kalau sudah ter-geocode, fallback ke kolom data
+  const getEffectiveKec = useCallback((r) => {
+    const geo = mismatchMap[r.id_pelanggan];
+    if (geo && geo.gpsKecamatan) return geo.gpsKecamatan;
+    return r.kecamatan;
+  }, [mismatchMap]);
+
   const kecamatans = useMemo(
-    () => [...new Set(rows.map((r) => r.kecamatan).filter(Boolean))].sort(),
-    [rows]
+    () => [...new Set(rows.map((r) => getEffectiveKec(r)).filter(Boolean))].sort(),
+    [rows, getEffectiveKec]
   );
   const kotas = useMemo(
     () => [...new Set(rows.map((r) => r.kota).filter(Boolean))].sort(),
@@ -194,20 +201,21 @@ export default function CustomerDashboard() {
     [rows]
   );
 
-  // Kecamatan list scoped to selected kota
+  // Kecamatan list scoped to selected kota (pakai kecamatan efektif)
   const kecamatansForKota = useMemo(() => {
     const source = kotaFilter === "Semua" ? rows : rows.filter((r) => r.kota === kotaFilter);
-    return [...new Set(source.map((r) => r.kecamatan).filter(Boolean))].sort();
-  }, [rows, kotaFilter]);
+    return [...new Set(source.map((r) => getEffectiveKec(r)).filter(Boolean))].sort();
+  }, [rows, kotaFilter, getEffectiveKec]);
 
   const kecCounts = useMemo(() => {
     const source = kotaFilter === "Semua" ? rows : rows.filter((r) => r.kota === kotaFilter);
     const m = {};
     source.forEach((r) => {
-      if (r.kecamatan) m[r.kecamatan] = (m[r.kecamatan] || 0) + 1;
+      const kec = getEffectiveKec(r);
+      if (kec) m[kec] = (m[kec] || 0) + 1;
     });
     return m;
-  }, [rows, kotaFilter]);
+  }, [rows, kotaFilter, getEffectiveKec]);
 
   const chartData = useMemo(
     () =>
@@ -220,7 +228,8 @@ export default function CustomerDashboard() {
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
-      const matchKec = kecFilter === "Semua" || r.kecamatan === kecFilter;
+      const effectiveKec = getEffectiveKec(r);
+      const matchKec = kecFilter === "Semua" || effectiveKec === kecFilter;
       const matchKota = kotaFilter === "Semua" || r.kota === kotaFilter;
       const matchDepo = depoFilter === "Semua" || r.id_depo === depoFilter;
       const s = search.toLowerCase();
@@ -233,7 +242,7 @@ export default function CustomerDashboard() {
       const matchMismatch = !showMismatchOnly || mismatchMap[r.id_pelanggan]?.isMismatch === true;
       return matchKec && matchKota && matchDepo && matchSearch && matchMismatch;
     });
-  }, [rows, kecFilter, kotaFilter, depoFilter, search, showMismatchOnly, mismatchMap]);
+  }, [rows, kecFilter, kotaFilter, depoFilter, search, showMismatchOnly, mismatchMap, getEffectiveKec]);
 
   const mismatchCount = useMemo(
     () => Object.values(mismatchMap).filter((v) => v.isMismatch).length,
@@ -578,7 +587,7 @@ export default function CustomerDashboard() {
                   Peta sebaran pelanggan {filtered.length !== rows.length && `(${filtered.length} hasil filter)`}
                 </h2>
                 <div className="flex-1 min-h-[480px] rounded-xl overflow-hidden">
-                  <CustomerMap rows={filtered} kecamatans={kecamatans} />
+                  <CustomerMap rows={filtered} kecamatans={kecamatans} mismatchMap={mismatchMap} />
                 </div>
               </div>
 
@@ -593,18 +602,20 @@ export default function CustomerDashboard() {
                         <Th>Nama</Th>
                         <Th>Alamat</Th>
                         <Th>Kelurahan</Th>
-                        <Th>Kecamatan (data)</Th>
                         <Th>Kecamatan GPS</Th>
+                        <Th>Kecamatan Data</Th>
                         <Th>Kota</Th>
                         <Th>Tgl Join</Th>
                       </tr>
                     </thead>
                     <tbody>
                       {pageRows.map((r, i) => {
-                        const kecIndex = kecamatans.indexOf(r.kecamatan);
+                        const effectiveKec = getEffectiveKec(r);
+                        const kecIndex = kecamatans.indexOf(effectiveKec);
                         const palette = PALETTE[kecIndex >= 0 ? kecIndex % PALETTE.length : 0];
                         const geoInfo = mismatchMap[r.id_pelanggan];
                         const isMismatch = geoInfo?.isMismatch === true;
+                        const geocoded = !!geoInfo;
                         return (
                           <tr
                             key={i}
@@ -620,25 +631,26 @@ export default function CustomerDashboard() {
                             <Td className="text-slate-500 max-w-[200px] truncate">{r.alamat}</Td>
                             <Td>{r.kelurahan}</Td>
                             <Td>
-                              <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${palette.bg} ${palette.text}`}>
-                                {r.kecamatan}
-                              </span>
+                              {geocoded ? (
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${palette.bg} ${palette.text}`}>
+                                  {isMismatch && <CheckCircle2 size={10} />}
+                                  {effectiveKec}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-300 flex items-center gap-1">
+                                  <Loader2 size={10} className={geocodeProgress ? "animate-spin" : ""} />
+                                  menunggu...
+                                </span>
+                              )}
                             </Td>
                             <Td>
-                              {geoInfo ? (
-                                isMismatch ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 whitespace-nowrap">
-                                    <AlertTriangle size={10} />
-                                    {geoInfo.gpsKecamatan}
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
-                                    <CheckCircle2 size={11} />
-                                    Sesuai
-                                  </span>
-                                )
+                              {isMismatch ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 whitespace-nowrap">
+                                  <AlertTriangle size={10} />
+                                  {r.kecamatan}
+                                </span>
                               ) : (
-                                <span className="text-xs text-slate-300">—</span>
+                                <span className="text-xs text-slate-400">{r.kecamatan}</span>
                               )}
                             </Td>
                             <Td>{r.kota}</Td>

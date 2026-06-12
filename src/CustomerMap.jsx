@@ -27,19 +27,23 @@ function FitBounds({ points }) {
   return null;
 }
 
-export default function CustomerMap({ rows, kecamatans }) {
+export default function CustomerMap({ rows, kecamatans, mismatchMap = {} }) {
   const points = useMemo(() => {
     return rows
       .map((r) => {
         const lat = parseFloat(r.latitude);
         const lng = parseFloat(r.longitude);
         if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return null;
-        const kecIndex = kecamatans.indexOf(r.kecamatan);
+        // Pakai kecamatan GPS kalau ada, fallback ke kolom data
+        const geoInfo = mismatchMap[r.id_pelanggan];
+        const effectiveKec = geoInfo?.gpsKecamatan || r.kecamatan;
+        const isMismatch = geoInfo?.isMismatch === true;
+        const kecIndex = kecamatans.indexOf(effectiveKec);
         const color = PALETTE_HEX[kecIndex >= 0 ? kecIndex % PALETTE_HEX.length : 0];
-        return { ...r, lat, lng, color };
+        return { ...r, lat, lng, color, effectiveKec, isMismatch };
       })
       .filter(Boolean);
-  }, [rows, kecamatans]);
+  }, [rows, kecamatans, mismatchMap]);
 
   const center = useMemo(() => {
     if (points.length === 0) return [0.5071, 101.4478]; // default Pekanbaru
@@ -72,23 +76,35 @@ export default function CustomerMap({ rows, kecamatans }) {
         <CircleMarker
           key={i}
           center={[p.lat, p.lng]}
-          radius={5}
+          radius={p.isMismatch ? 6 : 5}
           pathOptions={{
-            color: "#fff",
-            weight: 1,
+            color: p.isMismatch ? "#f59e0b" : "#fff",
+            weight: p.isMismatch ? 2 : 1,
             fillColor: p.color,
             fillOpacity: 0.85,
           }}
         >
           <Popup>
-            <div style={{ fontSize: 12, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, lineHeight: 1.6 }}>
               <strong>{p.nama_pelanggan}</strong>
               <br />
               {p.alamat}
               <br />
               <span style={{ color: "#64748b" }}>
-                {p.kelurahan}, {p.kecamatan}
+                {p.kelurahan}
               </span>
+              <br />
+              <span style={{ color: "#0d9488", fontWeight: 600 }}>
+                📍 {p.effectiveKec}
+              </span>
+              {p.isMismatch && (
+                <>
+                  <br />
+                  <span style={{ color: "#f59e0b", fontSize: 11 }}>
+                    ⚠️ Data lama: {p.kecamatan}
+                  </span>
+                </>
+              )}
               <br />
               <span style={{ color: "#94a3b8" }}>{p.id_pelanggan}</span>
             </div>
