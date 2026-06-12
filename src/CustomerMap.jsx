@@ -83,7 +83,7 @@ export default function CustomerMap({ rows, kecamatans, mismatchMap = {} }) {
     <MapContainer
       center={center}
       zoom={11}
-      style={{ height: "100%", width: "100%", borderRadius: "1rem" }}
+      style={{ height: "100%", width: "100%", borderRadius: "0.75rem", position: "absolute", top: 0, left: 0 }}
       key={points.length}
     >
       <TileLayer

@@ -317,7 +317,7 @@ export default function CustomerDashboard() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       {/* Header */}
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-10">
+      <header className="border-b border-slate-200 bg-white sticky top-0" style={{ zIndex: 1000 }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-lg font-semibold tracking-tight">Dashboard Pelanggan</h1>
@@ -607,7 +607,7 @@ export default function CustomerDashboard() {
                 <h2 className="text-sm font-semibold text-slate-700 mb-3">
                   Peta sebaran pelanggan {filtered.length !== rows.length && `(${filtered.length} hasil filter)`}
                 </h2>
-                <div className="flex-1 min-h-[480px] rounded-xl overflow-hidden">
+                <div style={{ height: 480, borderRadius: "0.75rem", overflow: "hidden", position: "relative" }}>
                   <CustomerMap rows={filtered} kecamatans={kecamatans} mismatchMap={mismatchMap} />
                 </div>
               </div>
