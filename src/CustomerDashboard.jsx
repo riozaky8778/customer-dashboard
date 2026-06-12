@@ -63,6 +63,27 @@ const REQUIRED_COLUMNS = [
   "LONGITUDE",
 ];
 
+// Mapping ID Depo → Nama Depo
+const DEPO_MAP = {
+  "784": "TSMK AIRHITAM",
+  "212": "TSMK KERINCI",
+  "213": "TSMK DURI",
+  "214": "TSMK AIRMOLEK",
+  "215": "TSMK BAGANBATU",
+  "219": "TSMK PASIRPUTIH",
+  "301": "TSMK PALAS",
+  "765": "TSMK TALUKKUANTAN",
+  "764": "TSMK UJUNGBATU",
+  "785": "TSMK HANGTUAH",
+  "126": "TSMK DUMAI",
+  "220": "TSMK SIAK",
+};
+
+function getDepoName(id) {
+  if (!id) return "-";
+  return DEPO_MAP[id.toString().trim()] || id;
+}
+
 export default function CustomerDashboard() {
   const [rows, setRows] = useState([]);
   const [fileName, setFileName] = useState("");
@@ -543,10 +564,10 @@ export default function CustomerDashboard() {
                   ))}
                 </Select>
 
-                <Select label="ID Depo" value={depoFilter} onChange={(v) => { setDepoFilter(v); setPage(1); }}>
+                <Select label="Depo" value={depoFilter} onChange={(v) => { setDepoFilter(v); setPage(1); }}>
                   <option value="Semua">Semua depo</option>
                   {depos.map((d) => (
-                    <option key={d} value={d}>{d}</option>
+                    <option key={d} value={d}>{getDepoName(d)}</option>
                   ))}
                 </Select>
 
@@ -597,7 +618,7 @@ export default function CustomerDashboard() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200">
-                        <Th>ID Depo</Th>
+                        <Th>Depo</Th>
                         <Th>ID Pelanggan</Th>
                         <Th>Nama</Th>
                         <Th>Alamat</Th>
@@ -625,7 +646,12 @@ export default function CustomerDashboard() {
                                 : "hover:bg-slate-50/60"
                             }`}
                           >
-                            <Td className="font-mono text-xs text-slate-500">{r.id_depo}</Td>
+                            <Td>
+                              <div className="text-xs">
+                                <span className="font-medium text-slate-700">{getDepoName(r.id_depo)}</span>
+                                <span className="text-slate-400 block">{r.id_depo}</span>
+                              </div>
+                            </Td>
                             <Td className="font-mono text-xs text-slate-500">{r.id_pelanggan}</Td>
                             <Td className="font-medium text-slate-800">{r.nama_pelanggan}</Td>
                             <Td className="text-slate-500 max-w-[200px] truncate">{r.alamat}</Td>
