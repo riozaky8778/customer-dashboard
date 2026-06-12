@@ -11,6 +11,8 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import {
   BarChart,
@@ -114,11 +116,22 @@ export default function CustomerDashboard() {
     [kecamatans, kecCounts]
   );
 
+  const statusBreakdown = useMemo(() => {
+    const m = { active: 0, inactive: 0 };
+    rows.forEach((r) => {
+      if (r.status_pelanggan === "ACT") m.active += 1;
+      else m.inactive += 1;
+    });
+    return m;
+  }, [rows]);
+
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       const matchKec = kecFilter === "Semua" || r.kecamatan === kecFilter;
       const matchKota = kotaFilter === "Semua" || r.kota === kotaFilter;
-      const matchStatus = statusFilter === "Semua" || r.status_pelanggan === statusFilter;
+      const matchStatus =
+        statusFilter === "Semua" ||
+        (statusFilter === "NONACT" ? r.status_pelanggan !== "ACT" : r.status_pelanggan === statusFilter);
       const s = search.toLowerCase();
       const matchSearch =
         !s ||
@@ -202,17 +215,36 @@ export default function CustomerDashboard() {
             )}
 
             {/* Stat cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
               <StatCard icon={<Users size={18} />} label="Total pelanggan" value={rows.length} accent="bg-violet-50 text-violet-600" />
               <StatCard icon={<MapPin size={18} />} label="Kecamatan" value={kecamatans.length} accent="bg-teal-50 text-teal-600" />
               <StatCard icon={<Building2 size={18} />} label="Kota" value={kotas.length} accent="bg-orange-50 text-orange-600" />
               <StatCard icon={<Filter size={18} />} label="Hasil filter" value={filtered.length} accent="bg-blue-50 text-blue-600" />
+              <StatCard
+                icon={<CheckCircle2 size={18} />}
+                label="Pelanggan aktif"
+                value={statusBreakdown.active}
+                accent="bg-emerald-50 text-emerald-600"
+                onClick={() => { setStatusFilter(statusFilter === "ACT" ? "Semua" : "ACT"); setPage(1); }}
+                active={statusFilter === "ACT"}
+              />
+              <StatCard
+                icon={<XCircle size={18} />}
+                label="Pelanggan non-aktif"
+                value={statusBreakdown.inactive}
+                accent="bg-rose-50 text-rose-600"
+                onClick={() => { setStatusFilter(statusFilter === "NONACT" ? "Semua" : "NONACT"); setPage(1); }}
+                active={statusFilter === "NONACT"}
+              />
             </div>
 
             {/* Chart + filters layout */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
               <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-4">
-                <h2 className="text-sm font-semibold text-slate-700 mb-3">Top 10 kecamatan berdasarkan jumlah pelanggan</h2>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-semibold text-slate-700">Top 10 kecamatan berdasarkan jumlah pelanggan</h2>
+                  <span className="text-xs text-slate-400">Klik bar untuk filter</span>
+                </div>
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart data={chartData} margin={{ top: 4, right: 8, left: -16, bottom: 4 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -229,9 +261,23 @@ export default function CustomerDashboard() {
                       contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
                       cursor={{ fill: "#f8fafc" }}
                     />
-                    <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                    <Bar
+                      dataKey="total"
+                      radius={[6, 6, 0, 0]}
+                      cursor="pointer"
+                      onClick={(data) => {
+                        if (!data || !data.name) return;
+                        setKecFilter((prev) => (prev === data.name ? "Semua" : data.name));
+                        setKotaFilter("Semua");
+                        setPage(1);
+                      }}
+                    >
                       {chartData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
+                        <Cell
+                          key={i}
+                          fill={entry.color}
+                          opacity={kecFilter === "Semua" || kecFilter === entry.name ? 1 : 0.3}
+                        />
                       ))}
                     </Bar>
                   </BarChart>
@@ -294,6 +340,7 @@ export default function CustomerDashboard() {
 
                 <Select label="Status" value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }}>
                   <option value="Semua">Semua status</option>
+                  <option value="NONACT">Non-aktif (semua)</option>
                   {statuses.map((s) => (
                     <option key={s} value={s}>{s}</option>
                   ))}
@@ -403,9 +450,14 @@ export default function CustomerDashboard() {
   );
 }
 
-function StatCard({ icon, label, value, accent }) {
+function StatCard({ icon, label, value, accent, onClick, active }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-3">
+    <div
+      onClick={onClick}
+      className={`bg-white rounded-2xl border p-4 flex items-center gap-3 transition-colors ${
+        onClick ? "cursor-pointer hover:border-slate-300" : ""
+      } ${active ? "border-slate-900 ring-1 ring-slate-900/10" : "border-slate-200"}`}
+    >
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${accent}`}>{icon}</div>
       <div>
         <p className="text-xs text-slate-500">{label}</p>
