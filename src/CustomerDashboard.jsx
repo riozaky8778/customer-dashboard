@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useCallback } from "react";
 import * as XLSX from "xlsx";
 import {
   Upload,
@@ -12,6 +12,9 @@ import {
   ChevronRight,
   X,
   Info,
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import {
   BarChart,
@@ -71,11 +74,69 @@ export default function CustomerDashboard() {
   const [page, setPage] = useState(1);
   const pageSize = 12;
 
+  // Geocoding state
+  const [geocodeProgress, setGeocodeProgress] = useState(null); // { done, total }
+  const [mismatchMap, setMismatchMap] = useState({}); // { id_pelanggan: { gpsKecamatan, isMismatch } }
+  const [showMismatchOnly, setShowMismatchOnly] = useState(false);
+  const abortRef = useRef(false);
+
+  // Normalisasi nama kecamatan untuk perbandingan (lowercase, hapus spasi ekstra)
+  const normKec = (s) => (s || "").toString().toLowerCase().trim().replace(/\s+/g, " ");
+
+  // Reverse geocode satu titik via Nominatim
+  const reverseGeocode = useCallback(async (lat, lng) => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=10&addressdetails=1`,
+        { headers: { "Accept-Language": "id" } }
+      );
+      if (!res.ok) return null;
+      const data = await res.json();
+      // Nominatim: suburb / city_district / county untuk level kecamatan
+      const addr = data.address || {};
+      return addr.suburb || addr.city_district || addr.county || addr.town || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Jalankan geocoding batch setelah rows di-set
+  const runGeocoding = useCallback(async (parsed) => {
+    const withCoord = parsed.filter(
+      (r) => !isNaN(r.latitude) && !isNaN(r.longitude) && !(r.latitude === 0 && r.longitude === 0)
+    );
+    if (withCoord.length === 0) return;
+
+    abortRef.current = false;
+    setGeocodeProgress({ done: 0, total: withCoord.length });
+    const result = {};
+
+    for (let i = 0; i < withCoord.length; i++) {
+      if (abortRef.current) break;
+      const r = withCoord[i];
+      const gpsKec = await reverseGeocode(r.latitude, r.longitude);
+      if (gpsKec !== null) {
+        const isMismatch = normKec(gpsKec) !== normKec(r.kecamatan);
+        result[r.id_pelanggan] = { gpsKecamatan: gpsKec, isMismatch };
+      }
+      setGeocodeProgress({ done: i + 1, total: withCoord.length });
+      // Rate limit ~1 req/detik sesuai kebijakan Nominatim
+      if (i < withCoord.length - 1) await new Promise((res) => setTimeout(res, 1100));
+    }
+
+    setMismatchMap(result);
+    setGeocodeProgress(null);
+  }, [reverseGeocode]);
+
   const handleFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setFileName(file.name);
     setStatus("Membaca file...");
+    abortRef.current = true; // abort geocoding sebelumnya jika ada
+    setMismatchMap({});
+    setGeocodeProgress(null);
+    setShowMismatchOnly(false);
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -109,6 +170,9 @@ export default function CustomerDashboard() {
         setKotaFilter("Semua");
         setDepoFilter("Semua");
         setSearch("");
+
+        // Mulai reverse geocoding di background
+        runGeocoding(parsed);
       } catch (err) {
         setStatus("Gagal membaca file. Pastikan format file benar (.xlsx).");
       }
@@ -166,37 +230,53 @@ export default function CustomerDashboard() {
         (r.id_pelanggan || "").toLowerCase().includes(s) ||
         (r.alamat || "").toLowerCase().includes(s) ||
         (r.kelurahan || "").toLowerCase().includes(s);
-      return matchKec && matchKota && matchDepo && matchSearch;
+      const matchMismatch = !showMismatchOnly || mismatchMap[r.id_pelanggan]?.isMismatch === true;
+      return matchKec && matchKota && matchDepo && matchSearch && matchMismatch;
     });
-  }, [rows, kecFilter, kotaFilter, depoFilter, search]);
+  }, [rows, kecFilter, kotaFilter, depoFilter, search, showMismatchOnly, mismatchMap]);
+
+  const mismatchCount = useMemo(
+    () => Object.values(mismatchMap).filter((v) => v.isMismatch).length,
+    [mismatchMap]
+  );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const activeFilterCount = [kecFilter, kotaFilter, depoFilter].filter((f) => f !== "Semua").length;
+  const activeFilterCount = [kecFilter, kotaFilter, depoFilter].filter((f) => f !== "Semua").length + (showMismatchOnly ? 1 : 0);
 
   const resetFilters = () => {
     setKecFilter("Semua");
     setKotaFilter("Semua");
     setDepoFilter("Semua");
     setSearch("");
+    setShowMismatchOnly(false);
     setPage(1);
   };
 
   const exportXLSX = () => {
-    const exportData = filtered.map((r) => ({
-      "ID DEPO": r.id_depo,
-      "ID PELANGGAN": r.id_pelanggan,
-      "NAMA PELANGGAN": r.nama_pelanggan,
-      ALAMAT: r.alamat,
-      KELURAHAN: r.kelurahan,
-      KECAMATAN: r.kecamatan,
-      KOTA: r.kota,
-      "ID HIRARKI": r.id_hirarki,
-      "TGL JOIN": r.tgl_join,
-      LATITUDE: r.latitude,
-      LONGITUDE: r.longitude,
-    }));
+    const exportData = filtered.map((r) => {
+      const geoInfo = mismatchMap[r.id_pelanggan];
+      return {
+        "ID DEPO": r.id_depo,
+        "ID PELANGGAN": r.id_pelanggan,
+        "NAMA PELANGGAN": r.nama_pelanggan,
+        ALAMAT: r.alamat,
+        KELURAHAN: r.kelurahan,
+        KECAMATAN: r.kecamatan,
+        "KECAMATAN GPS": geoInfo ? geoInfo.gpsKecamatan : "",
+        "STATUS KOORDINAT": geoInfo
+          ? geoInfo.isMismatch
+            ? "MISMATCH"
+            : "SESUAI"
+          : "BELUM DICEK",
+        KOTA: r.kota,
+        "ID HIRARKI": r.id_hirarki,
+        "TGL JOIN": r.tgl_join,
+        LATITUDE: r.latitude,
+        LONGITUDE: r.longitude,
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Pelanggan");
@@ -281,6 +361,68 @@ export default function CustomerDashboard() {
             {status && (
               <div className="mb-4 text-sm text-slate-500">
                 {status} {fileName && <span className="text-slate-400">— {fileName}</span>}
+              </div>
+            )}
+
+            {/* Geocoding progress bar */}
+            {geocodeProgress && (
+              <div className="mb-4 bg-blue-50 border border-blue-200 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Loader2 size={14} className="text-blue-500 animate-spin" />
+                  <span className="text-sm font-medium text-blue-700">
+                    Memverifikasi lokasi via GPS… {geocodeProgress.done}/{geocodeProgress.total}
+                  </span>
+                  <button
+                    onClick={() => { abortRef.current = true; setGeocodeProgress(null); }}
+                    className="ml-auto text-xs text-blue-400 hover:text-blue-600"
+                  >
+                    Batalkan
+                  </button>
+                </div>
+                <div className="w-full bg-blue-100 rounded-full h-1.5">
+                  <div
+                    className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${(geocodeProgress.done / geocodeProgress.total) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-blue-400 mt-1">
+                  Proses ~1 detik/baris karena batas API Nominatim (gratis, tanpa key)
+                </p>
+              </div>
+            )}
+
+            {/* Mismatch summary alert */}
+            {!geocodeProgress && mismatchCount > 0 && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-3">
+                <AlertTriangle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-amber-800">
+                    {mismatchCount} pelanggan memiliki kecamatan berbeda antara data dan GPS
+                  </p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Kolom KECAMATAN di data mungkin sudah tidak sesuai posisi koordinat sebenarnya.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setShowMismatchOnly((v) => !v); setPage(1); }}
+                  className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                    showMismatchOnly
+                      ? "bg-amber-500 text-white"
+                      : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                  }`}
+                >
+                  {showMismatchOnly ? "Tampilkan semua" : "Lihat yang mismatch"}
+                </button>
+              </div>
+            )}
+
+            {/* Selesai verifikasi tanpa mismatch */}
+            {!geocodeProgress && mismatchCount === 0 && Object.keys(mismatchMap).length > 0 && (
+              <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
+                <CheckCircle2 size={15} className="text-emerald-500" />
+                <p className="text-sm text-emerald-700">
+                  Semua koordinat sesuai dengan kolom kecamatan di data.
+                </p>
               </div>
             )}
 
@@ -398,6 +540,33 @@ export default function CustomerDashboard() {
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </Select>
+
+                {/* Toggle mismatch filter */}
+                {(mismatchCount > 0 || geocodeProgress) && (
+                  <button
+                    onClick={() => { setShowMismatchOnly((v) => !v); setPage(1); }}
+                    disabled={!!geocodeProgress}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                      showMismatchOnly
+                        ? "bg-amber-50 border-amber-300 text-amber-700"
+                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    } disabled:opacity-40`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <AlertTriangle size={13} className={showMismatchOnly ? "text-amber-500" : "text-slate-400"} />
+                      Mismatch kecamatan
+                    </span>
+                    {geocodeProgress ? (
+                      <Loader2 size={12} className="animate-spin text-slate-400" />
+                    ) : (
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${
+                        mismatchCount > 0 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-400"
+                      }`}>
+                        {mismatchCount}
+                      </span>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -424,7 +593,8 @@ export default function CustomerDashboard() {
                         <Th>Nama</Th>
                         <Th>Alamat</Th>
                         <Th>Kelurahan</Th>
-                        <Th>Kecamatan</Th>
+                        <Th>Kecamatan (data)</Th>
+                        <Th>Kecamatan GPS</Th>
                         <Th>Kota</Th>
                         <Th>Tgl Join</Th>
                       </tr>
@@ -433,8 +603,17 @@ export default function CustomerDashboard() {
                       {pageRows.map((r, i) => {
                         const kecIndex = kecamatans.indexOf(r.kecamatan);
                         const palette = PALETTE[kecIndex >= 0 ? kecIndex % PALETTE.length : 0];
+                        const geoInfo = mismatchMap[r.id_pelanggan];
+                        const isMismatch = geoInfo?.isMismatch === true;
                         return (
-                          <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-colors">
+                          <tr
+                            key={i}
+                            className={`border-b border-slate-100 last:border-0 transition-colors ${
+                              isMismatch
+                                ? "bg-amber-50/60 hover:bg-amber-50"
+                                : "hover:bg-slate-50/60"
+                            }`}
+                          >
                             <Td className="font-mono text-xs text-slate-500">{r.id_depo}</Td>
                             <Td className="font-mono text-xs text-slate-500">{r.id_pelanggan}</Td>
                             <Td className="font-medium text-slate-800">{r.nama_pelanggan}</Td>
@@ -444,6 +623,23 @@ export default function CustomerDashboard() {
                               <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${palette.bg} ${palette.text}`}>
                                 {r.kecamatan}
                               </span>
+                            </Td>
+                            <Td>
+                              {geoInfo ? (
+                                isMismatch ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 whitespace-nowrap">
+                                    <AlertTriangle size={10} />
+                                    {geoInfo.gpsKecamatan}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+                                    <CheckCircle2 size={11} />
+                                    Sesuai
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-xs text-slate-300">—</span>
+                              )}
                             </Td>
                             <Td>{r.kota}</Td>
                             <Td className="text-xs text-slate-500 whitespace-nowrap">{r.tgl_join}</Td>
