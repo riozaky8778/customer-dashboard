@@ -303,9 +303,10 @@ export default function CustomerDashboard() {
   const chartData = useMemo(
     () =>
       kecamatans
-        .map((k, i) => ({ name: k, total: kecCounts[k] || 0, color: PALETTE[i % PALETTE.length].bar }))
+        .map((k) => ({ name: k, total: kecCounts[k] || 0 }))
         .sort((a, b) => b.total - a.total)
-        .slice(0, 10),
+        .slice(0, 10)
+        .map((item, i) => ({ ...item, color: PALETTE[i % PALETTE.length].bar })),
     [kecamatans, kecCounts]
   );
 
