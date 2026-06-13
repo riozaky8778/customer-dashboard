@@ -41,6 +41,24 @@ function parseCoord(val) {
   return parseFloat(s);
 }
 
+// Konversi tanggal Excel (serial number atau string) ke format "13 Jun 2026"
+const BULAN = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+function formatTanggal(val) {
+  if (!val && val !== 0) return "-";
+  let date;
+  const num = Number(val);
+  if (!isNaN(num) && num > 1000) {
+    // Serial number Excel — epoch Excel dimulai 1 Jan 1900 (dengan bug leap year 1900)
+    const excelEpoch = new Date(1899, 11, 30);
+    date = new Date(excelEpoch.getTime() + num * 86400000);
+  } else {
+    // Coba parse sebagai string tanggal
+    date = new Date(val);
+  }
+  if (isNaN(date.getTime())) return val?.toString() || "-";
+  return `${date.getDate()} ${BULAN[date.getMonth()]} ${date.getFullYear()}`;
+}
+
 const PALETTE = [
   { bg: "bg-violet-100", text: "text-violet-800", bar: "#7c3aed" },
   { bg: "bg-orange-100", text: "text-orange-800", bar: "#ea580c" },
@@ -372,7 +390,7 @@ export default function CustomerDashboard() {
           : "BELUM DICEK",
         KOTA: r.kota,
         "ID HIRARKI": r.id_hirarki,
-        "TGL JOIN": r.tgl_join,
+        "TGL JOIN": formatTanggal(r.tgl_join),
         LATITUDE: r.latitude,
         LONGITUDE: r.longitude,
       };
@@ -783,7 +801,7 @@ export default function CustomerDashboard() {
                               )}
                             </Td>
                             <Td>{r.kota}</Td>
-                            <Td className="text-xs text-slate-500 whitespace-nowrap">{r.tgl_join}</Td>
+                            <Td className="text-xs text-slate-500 whitespace-nowrap">{formatTanggal(r.tgl_join)}</Td>
                           </tr>
                         );
                       })}
