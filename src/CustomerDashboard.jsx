@@ -1,5 +1,7 @@
-import React, { useState, useMemo, useRef, useCallback } from "react";
+import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import * as XLSX from "xlsx";
+import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
+import { point } from "@turf/helpers";
 import {
   Upload,
   Download,
@@ -95,66 +97,86 @@ export default function CustomerDashboard() {
   const [page, setPage] = useState(1);
   const pageSize = 12;
 
-  // Geocoding state
-  const [geocodeProgress, setGeocodeProgress] = useState(null); // { done, total }
-  const [mismatchMap, setMismatchMap] = useState({}); // { id_pelanggan: { gpsKecamatan, isMismatch } }
+  // GeoJSON polygon state
+  const [geoFeatures, setGeoFeatures] = useState(null); // array of GeoJSON features
+  const [geoLoading, setGeoLoading] = useState(false);
+
+  // Load GeoJSON otomatis dari public folder kalau ada
+  useEffect(() => {
+    fetch("/riau-kecamatan.geojson")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.features) setGeoFeatures(data.features);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Geocoding state (hasil lookup polygon)
+  const [geocodeProgress, setGeocodeProgress] = useState(null);
+  const [mismatchMap, setMismatchMap] = useState({});
   const [showMismatchOnly, setShowMismatchOnly] = useState(false);
   const abortRef = useRef(false);
 
-  // Normalisasi nama kecamatan untuk perbandingan (lowercase, hapus spasi ekstra)
+  // Normalisasi nama kecamatan
   const normKec = (s) => (s || "").toString().toLowerCase().trim().replace(/\s+/g, " ");
 
-  // Reverse geocode satu titik via Nominatim
-  const reverseGeocode = useCallback(async (lat, lng) => {
+  // Lookup kecamatan dari koordinat pakai polygon (sangat cepat, offline)
+  const lookupKecamatan = useCallback((lat, lng, features) => {
+    if (!features) return null;
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=10&addressdetails=1`,
-        { headers: { "Accept-Language": "id" } }
-      );
-      if (!res.ok) return null;
-      const data = await res.json();
-      // Nominatim: suburb / city_district / county untuk level kecamatan
-      const addr = data.address || {};
-      return addr.suburb || addr.city_district || addr.county || addr.town || null;
-    } catch {
-      return null;
-    }
+      const pt = point([lng, lat]);
+      for (const feature of features) {
+        if (booleanPointInPolygon(pt, feature)) {
+          return feature.properties.kecamatan;
+        }
+      }
+    } catch {}
+    return null;
   }, []);
 
-  // Jalankan geocoding batch setelah rows di-set
-  const runGeocoding = useCallback(async (parsed) => {
+  // Jalankan validasi polygon — sangat cepat, tidak butuh rate limit
+  const runPolygonValidation = useCallback((parsed, features) => {
+    if (!features) return;
+    abortRef.current = false;
     const withCoord = parsed.filter(
       (r) => !isNaN(r.latitude) && !isNaN(r.longitude) && !(r.latitude === 0 && r.longitude === 0)
     );
     if (withCoord.length === 0) return;
 
-    abortRef.current = false;
     setGeocodeProgress({ done: 0, total: withCoord.length });
     const result = {};
 
-    for (let i = 0; i < withCoord.length; i++) {
-      if (abortRef.current) break;
-      const r = withCoord[i];
-      const gpsKec = await reverseGeocode(r.latitude, r.longitude);
-      if (gpsKec !== null) {
-        const isMismatch = normKec(gpsKec) !== normKec(r.kecamatan);
-        result[r.id_pelanggan] = { gpsKecamatan: gpsKec, isMismatch };
+    // Proses dalam batch kecil supaya UI tidak freeze
+    let i = 0;
+    function processBatch() {
+      const batchSize = 200;
+      const end = Math.min(i + batchSize, withCoord.length);
+      for (; i < end; i++) {
+        if (abortRef.current) break;
+        const r = withCoord[i];
+        const gpsKec = lookupKecamatan(r.latitude, r.longitude, features);
+        if (gpsKec !== null) {
+          const isMismatch = normKec(gpsKec) !== normKec(r.kecamatan);
+          result[r.id_pelanggan] = { gpsKecamatan: gpsKec, isMismatch };
+        }
       }
-      setGeocodeProgress({ done: i + 1, total: withCoord.length });
-      // Rate limit ~1 req/detik sesuai kebijakan Nominatim
-      if (i < withCoord.length - 1) await new Promise((res) => setTimeout(res, 1100));
+      setGeocodeProgress({ done: i, total: withCoord.length });
+      if (i < withCoord.length && !abortRef.current) {
+        setTimeout(processBatch, 0);
+      } else {
+        setMismatchMap(result);
+        setGeocodeProgress(null);
+      }
     }
-
-    setMismatchMap(result);
-    setGeocodeProgress(null);
-  }, [reverseGeocode]);
+    processBatch();
+  }, [lookupKecamatan]);
 
   const handleFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setFileName(file.name);
     setStatus("Membaca file...");
-    abortRef.current = true; // abort geocoding sebelumnya jika ada
+    abortRef.current = true;
     setMismatchMap({});
     setGeocodeProgress(null);
     setShowMismatchOnly(false);
@@ -172,7 +194,6 @@ export default function CustomerDashboard() {
           .map((r) => {
             const obj = {};
             Object.keys(r).forEach((k) => (obj[norm(k)] = r[k]));
-            // Normalisasi field jadi string trimmed
             Object.keys(obj).forEach((k) => {
               if (k !== "latitude" && k !== "longitude") {
                 obj[k] = (obj[k] ?? "").toString().trim();
@@ -192,14 +213,42 @@ export default function CustomerDashboard() {
         setDepoFilter("Semua");
         setSearch("");
 
-        // Mulai reverse geocoding di background
-        runGeocoding(parsed);
+        // Jalankan validasi polygon (cepat) atau Nominatim kalau GeoJSON belum ada
+        if (geoFeatures) {
+          runPolygonValidation(parsed, geoFeatures);
+        }
       } catch (err) {
         setStatus("Gagal membaca file. Pastikan format file benar (.xlsx).");
       }
     };
     reader.onerror = () => setStatus("Gagal membaca file.");
     reader.readAsArrayBuffer(file);
+  };
+
+  // Handler upload file GeoJSON manual (kalau tidak ada di public folder)
+  const handleGeoJSON = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setGeoLoading(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = JSON.parse(evt.target.result);
+        if (data?.features) {
+          setGeoFeatures(data.features);
+          setStatus(`GeoJSON dimuat: ${data.features.length} kecamatan`);
+          // Kalau data sudah ada, langsung validasi ulang
+          if (rows.length > 0) {
+            setMismatchMap({});
+            runPolygonValidation(rows, data.features);
+          }
+        }
+      } catch {
+        setStatus("Gagal membaca file GeoJSON.");
+      }
+      setGeoLoading(false);
+    };
+    reader.readAsText(file);
   };
 
   // Kecamatan efektif: pakai GPS kalau sudah ter-geocode, fallback ke kolom data
@@ -323,7 +372,18 @@ export default function CustomerDashboard() {
             <h1 className="text-lg font-semibold tracking-tight">Dashboard Pelanggan</h1>
             <p className="text-sm text-slate-500">Filter dan analisis pelanggan per kecamatan</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Status GeoJSON */}
+            <span className={`text-xs px-2 py-1 rounded-full font-medium ${geoFeatures ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+              {geoFeatures ? `✓ Peta wilayah (${geoFeatures.length} kec)` : "⚠ Belum ada peta wilayah"}
+            </span>
+            {!geoFeatures && (
+              <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-medium cursor-pointer hover:bg-slate-50 transition-colors">
+                {geoLoading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                Upload GeoJSON
+                <input type="file" accept=".geojson,.json" onChange={handleGeoJSON} className="hidden" />
+              </label>
+            )}
             <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium cursor-pointer hover:bg-slate-700 transition-colors">
               <Upload size={16} />
               Upload Excel
@@ -400,7 +460,7 @@ export default function CustomerDashboard() {
                 <div className="flex items-center gap-2 mb-2">
                   <Loader2 size={14} className="text-blue-500 animate-spin" />
                   <span className="text-sm font-medium text-blue-700">
-                    Memverifikasi lokasi via GPS… {geocodeProgress.done}/{geocodeProgress.total}
+                    Memvalidasi koordinat… {geocodeProgress.done}/{geocodeProgress.total}
                   </span>
                   <button
                     onClick={() => { abortRef.current = true; setGeocodeProgress(null); }}
@@ -416,7 +476,7 @@ export default function CustomerDashboard() {
                   />
                 </div>
                 <p className="text-xs text-blue-400 mt-1">
-                  Proses ~1 detik/baris karena batas API Nominatim (gratis, tanpa key)
+                  Validasi offline via polygon kecamatan — tidak perlu internet
                 </p>
               </div>
             )}
