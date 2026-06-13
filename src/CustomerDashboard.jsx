@@ -156,8 +156,12 @@ export default function CustomerDashboard() {
         const r = withCoord[i];
         const gpsKec = lookupKecamatan(r.latitude, r.longitude, features);
         if (gpsKec !== null) {
+          // Ketemu polygon → cek mismatch
           const isMismatch = normKec(gpsKec) !== normKec(r.kecamatan);
-          result[r.id_pelanggan] = { gpsKecamatan: gpsKec, isMismatch };
+          result[r.id_pelanggan] = { gpsKecamatan: gpsKec, isMismatch, isInvalid: false };
+        } else {
+          // Tidak ketemu polygon → koordinat di luar Riau / invalid
+          result[r.id_pelanggan] = { gpsKecamatan: null, isMismatch: false, isInvalid: true };
         }
       }
       setGeocodeProgress({ done: i, total: withCoord.length });
@@ -315,7 +319,12 @@ export default function CustomerDashboard() {
   }, [rows, kecFilter, kotaFilter, depoFilter, search, showMismatchOnly, mismatchMap, getEffectiveKec]);
 
   const mismatchCount = useMemo(
-    () => Object.values(mismatchMap).filter((v) => v.isMismatch).length,
+    () => Object.values(mismatchMap).filter((v) => v.isMismatch && !v.isInvalid).length,
+    [mismatchMap]
+  );
+
+  const invalidCount = useMemo(
+    () => Object.values(mismatchMap).filter((v) => v.isInvalid).length,
     [mismatchMap]
   );
 
@@ -345,7 +354,9 @@ export default function CustomerDashboard() {
         KECAMATAN: r.kecamatan,
         "KECAMATAN GPS": geoInfo ? geoInfo.gpsKecamatan : "",
         "STATUS KOORDINAT": geoInfo
-          ? geoInfo.isMismatch
+          ? geoInfo.isInvalid
+            ? "KOORDINAT INVALID"
+            : geoInfo.isMismatch
             ? "MISMATCH"
             : "SESUAI"
           : "BELUM DICEK",
@@ -483,14 +494,14 @@ export default function CustomerDashboard() {
 
             {/* Mismatch summary alert */}
             {!geocodeProgress && mismatchCount > 0 && (
-              <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-3">
+              <div className="mb-2 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-3">
                 <AlertTriangle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-amber-800">
-                    {mismatchCount} pelanggan memiliki kecamatan berbeda antara data dan GPS
+                    {mismatchCount} pelanggan kecamatannya tidak sesuai koordinat
                   </p>
                   <p className="text-xs text-amber-600 mt-0.5">
-                    Kolom KECAMATAN di data mungkin sudah tidak sesuai posisi koordinat sebenarnya.
+                    Koordinat ada di Riau, tapi nama kecamatan di data berbeda dengan lokasi GPS.
                   </p>
                 </div>
                 <button
@@ -506,12 +517,27 @@ export default function CustomerDashboard() {
               </div>
             )}
 
-            {/* Selesai verifikasi tanpa mismatch */}
-            {!geocodeProgress && mismatchCount === 0 && Object.keys(mismatchMap).length > 0 && (
+            {/* Invalid koordinat alert */}
+            {!geocodeProgress && invalidCount > 0 && (
+              <div className="mb-4 bg-slate-100 border border-slate-300 rounded-xl p-3 flex items-start gap-3">
+                <Info size={16} className="text-slate-500 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-700">
+                    {invalidCount} pelanggan memiliki koordinat di luar wilayah Riau
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Koordinat tidak ditemukan dalam polygon kecamatan — kemungkinan koordinat salah input atau belum diupdate.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Selesai verifikasi tanpa masalah */}
+            {!geocodeProgress && mismatchCount === 0 && invalidCount === 0 && Object.keys(mismatchMap).length > 0 && (
               <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
                 <CheckCircle2 size={15} className="text-emerald-500" />
                 <p className="text-sm text-emerald-700">
-                  Semua koordinat sesuai dengan kolom kecamatan di data.
+                  Semua koordinat valid dan sesuai dengan kolom kecamatan di data.
                 </p>
               </div>
             )}
@@ -696,12 +722,15 @@ export default function CustomerDashboard() {
                         const palette = PALETTE[kecIndex >= 0 ? kecIndex % PALETTE.length : 0];
                         const geoInfo = mismatchMap[r.id_pelanggan];
                         const isMismatch = geoInfo?.isMismatch === true;
+                        const isInvalid = geoInfo?.isInvalid === true;
                         const geocoded = !!geoInfo;
                         return (
                           <tr
                             key={i}
                             className={`border-b border-slate-100 last:border-0 transition-colors ${
-                              isMismatch
+                              isInvalid
+                                ? "bg-slate-50/80 hover:bg-slate-100/60"
+                                : isMismatch
                                 ? "bg-amber-50/60 hover:bg-amber-50"
                                 : "hover:bg-slate-50/60"
                             }`}
@@ -717,15 +746,18 @@ export default function CustomerDashboard() {
                             <Td className="text-slate-500 max-w-[200px] truncate">{r.alamat}</Td>
                             <Td>{r.kelurahan}</Td>
                             <Td>
-                              {geocoded ? (
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${palette.bg} ${palette.text}`}>
-                                  {isMismatch && <CheckCircle2 size={10} />}
-                                  {effectiveKec}
-                                </span>
-                              ) : (
+                              {!geocoded ? (
                                 <span className="text-xs text-slate-300 flex items-center gap-1">
                                   <Loader2 size={10} className={geocodeProgress ? "animate-spin" : ""} />
                                   menunggu...
+                                </span>
+                              ) : isInvalid ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-200 text-slate-500 whitespace-nowrap">
+                                  ❓ Di luar Riau
+                                </span>
+                              ) : (
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${palette.bg} ${palette.text}`}>
+                                  {effectiveKec}
                                 </span>
                               )}
                             </Td>

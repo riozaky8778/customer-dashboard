@@ -57,16 +57,18 @@ export default function CustomerMap({ rows, kecamatans, mismatchMap = {} }) {
         const geoInfo = mismatchMap[r.id_pelanggan];
         const effectiveKec = geoInfo?.gpsKecamatan || r.kecamatan;
         const isMismatch = geoInfo?.isMismatch === true;
+        const isInvalid = geoInfo?.isInvalid === true;
         const isChecked = !!geoInfo;
         const kecIndex = kecamatans.indexOf(effectiveKec);
         const color = PALETTE_HEX[kecIndex >= 0 ? kecIndex % PALETTE_HEX.length : 0];
-        return { ...r, lat, lng, color, effectiveKec, isMismatch, isChecked };
+        return { ...r, lat, lng, color, effectiveKec, isMismatch, isInvalid, isChecked };
       })
       .filter(Boolean);
   }, [rows, kecamatans, mismatchMap]);
 
-  // Pisah mismatch dan normal — render mismatch belakangan supaya di atas
-  const normalPoints = useMemo(() => points.filter((p) => !p.isMismatch), [points]);
+  // Pisah 3 kategori — render invalid duluan (paling bawah), normal tengah, mismatch paling atas
+  const invalidPoints = useMemo(() => points.filter((p) => p.isInvalid), [points]);
+  const normalPoints = useMemo(() => points.filter((p) => !p.isMismatch && !p.isInvalid), [points]);
   const mismatchPoints = useMemo(() => points.filter((p) => p.isMismatch), [points]);
 
   const center = useMemo(() => {
@@ -89,37 +91,41 @@ export default function CustomerMap({ rows, kecamatans, mismatchMap = {} }) {
       <div style={{ fontSize: 12, lineHeight: 1.7, minWidth: 190 }}>
         {p.isMismatch && (
           <div style={{
-            background: "#fef3c7",
-            border: "1px solid #fcd34d",
-            borderRadius: 6,
-            padding: "4px 8px",
-            marginBottom: 8,
-            fontSize: 11,
-            fontWeight: 600,
-            color: "#92400e",
+            background: "#fef3c7", border: "1px solid #fcd34d",
+            borderRadius: 6, padding: "4px 8px", marginBottom: 8,
+            fontSize: 11, fontWeight: 600, color: "#92400e",
           }}>
             ⚠️ DATA KOORDINAT TIDAK SESUAI
           </div>
         )}
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>
-          {p.nama_pelanggan}
-        </div>
+        {p.isInvalid && (
+          <div style={{
+            background: "#f1f5f9", border: "1px solid #cbd5e1",
+            borderRadius: 6, padding: "4px 8px", marginBottom: 8,
+            fontSize: 11, fontWeight: 600, color: "#475569",
+          }}>
+            ❓ KOORDINAT DI LUAR RIAU
+          </div>
+        )}
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{p.nama_pelanggan}</div>
         <div style={{ color: "#475569" }}>{p.alamat}</div>
         <div style={{ color: "#64748b" }}>{p.kelurahan}</div>
         <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #e2e8f0" }}>
-          <div style={{ color: "#0d9488", fontWeight: 600 }}>
-            📍 Lokasi GPS: {p.effectiveKec}
-          </div>
-          {p.isMismatch && (
-            <div style={{ color: "#dc2626", fontWeight: 600, marginTop: 2 }}>
-              ❌ Data lama: {p.kecamatan}
+          {p.isInvalid ? (
+            <div style={{ color: "#94a3b8", fontStyle: "italic" }}>
+              Koordinat tidak ditemukan dalam wilayah Riau
             </div>
+          ) : (
+            <>
+              <div style={{ color: "#0d9488", fontWeight: 600 }}>📍 Lokasi GPS: {p.effectiveKec}</div>
+              {p.isMismatch && (
+                <div style={{ color: "#dc2626", fontWeight: 600, marginTop: 2 }}>❌ Data lama: {p.kecamatan}</div>
+              )}
+            </>
           )}
         </div>
         <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #e2e8f0" }}>
-          <div style={{ color: "#7c3aed", fontWeight: 600, fontSize: 11 }}>
-            🏭 {getDepoName(p.id_depo)}
-          </div>
+          <div style={{ color: "#7c3aed", fontWeight: 600, fontSize: 11 }}>🏭 {getDepoName(p.id_depo)}</div>
           <div style={{ color: "#94a3b8", fontSize: 11 }}>{p.id_pelanggan}</div>
         </div>
       </div>
@@ -139,35 +145,37 @@ export default function CustomerMap({ rows, kecamatans, mismatchMap = {} }) {
       />
       <FitBounds points={points} />
 
-      {/* Titik normal — render duluan (di bawah) */}
-      {normalPoints.map((p, i) => (
+      {/* Titik invalid — abu-abu, paling bawah */}
+      {invalidPoints.map((p, i) => (
         <CircleMarker
-          key={`n-${i}`}
+          key={`inv-${i}`}
           center={[p.lat, p.lng]}
           radius={5}
-          pathOptions={{
-            color: "#fff",
-            weight: 1,
-            fillColor: p.color,
-            fillOpacity: 0.85,
-          }}
+          pathOptions={{ color: "#94a3b8", weight: 1, fillColor: "#cbd5e1", fillOpacity: 0.7 }}
         >
           {renderPopup(p)}
         </CircleMarker>
       ))}
 
-      {/* Titik mismatch — render belakangan (di atas), warna merah mencolok */}
+      {/* Titik normal — warna per kecamatan */}
+      {normalPoints.map((p, i) => (
+        <CircleMarker
+          key={`n-${i}`}
+          center={[p.lat, p.lng]}
+          radius={5}
+          pathOptions={{ color: "#fff", weight: 1, fillColor: p.color, fillOpacity: 0.85 }}
+        >
+          {renderPopup(p)}
+        </CircleMarker>
+      ))}
+
+      {/* Titik mismatch — merah mencolok, paling atas */}
       {mismatchPoints.map((p, i) => (
         <CircleMarker
           key={`m-${i}`}
           center={[p.lat, p.lng]}
           radius={9}
-          pathOptions={{
-            color: "#dc2626",
-            weight: 2.5,
-            fillColor: "#fca5a5",
-            fillOpacity: 0.95,
-          }}
+          pathOptions={{ color: "#dc2626", weight: 2.5, fillColor: "#fca5a5", fillOpacity: 0.95 }}
         >
           {renderPopup(p)}
         </CircleMarker>
