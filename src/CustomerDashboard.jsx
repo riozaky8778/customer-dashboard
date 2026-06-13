@@ -43,12 +43,17 @@ function parseCoord(val) {
 
 const PALETTE = [
   { bg: "bg-violet-100", text: "text-violet-800", bar: "#7c3aed" },
-  { bg: "bg-teal-100", text: "text-teal-800", bar: "#0d9488" },
   { bg: "bg-orange-100", text: "text-orange-800", bar: "#ea580c" },
-  { bg: "bg-pink-100", text: "text-pink-800", bar: "#db2777" },
   { bg: "bg-blue-100", text: "text-blue-800", bar: "#2563eb" },
-  { bg: "bg-emerald-100", text: "text-emerald-800", bar: "#059669" },
+  { bg: "bg-pink-100", text: "text-pink-800", bar: "#db2777" },
+  { bg: "bg-teal-100", text: "text-teal-800", bar: "#0d9488" },
   { bg: "bg-amber-100", text: "text-amber-800", bar: "#d97706" },
+  { bg: "bg-emerald-100", text: "text-emerald-800", bar: "#059669" },
+  { bg: "bg-red-100", text: "text-red-800", bar: "#dc2626" },
+  { bg: "bg-cyan-100", text: "text-cyan-800", bar: "#0891b2" },
+  { bg: "bg-indigo-100", text: "text-indigo-800", bar: "#4f46e5" },
+  { bg: "bg-lime-100", text: "text-lime-800", bar: "#65a30d" },
+  { bg: "bg-rose-100", text: "text-rose-800", bar: "#e11d48" },
 ];
 
 const REQUIRED_COLUMNS = [
@@ -84,6 +89,10 @@ const DEPO_MAP = {
 function getDepoName(id) {
   if (!id) return "-";
   return DEPO_MAP[id.toString().trim()] || id;
+}
+
+function formatNum(n) {
+  return (n ?? 0).toLocaleString("id-ID");
 }
 
 export default function CustomerDashboard() {
@@ -568,10 +577,11 @@ export default function CustomerDashboard() {
                       height={60}
                       interval={0}
                     />
-                    <YAxis tick={{ fontSize: 11, fill: "#64748b" }} allowDecimals={false} />
+                    <YAxis tick={{ fontSize: 11, fill: "#64748b" }} allowDecimals={false} tickFormatter={(v) => v.toLocaleString("id-ID")} />
                     <Tooltip
                       contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
                       cursor={{ fill: "#f8fafc" }}
+                      formatter={(v) => [v.toLocaleString("id-ID"), "Pelanggan"]}
                     />
                     <Bar
                       dataKey="total"
@@ -830,7 +840,7 @@ function StatCard({ icon, label, value, accent, onClick, active }) {
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${accent}`}>{icon}</div>
       <div>
         <p className="text-xs text-slate-500">{label}</p>
-        <p className="text-xl font-semibold text-slate-900">{value}</p>
+        <p className="text-xl font-semibold text-slate-900">{typeof value === "number" ? formatNum(value) : value}</p>
       </div>
     </div>
   );
